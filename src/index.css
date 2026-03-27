@@ -1,0 +1,108 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── YAZ PULSE Dark Intelligence Theme ── */
+:root {
+  --color-bg: #f5f6f8;
+  --color-surface: #ffffff;
+  --color-surface-2: #f0f1f4;
+  --color-text: #1a1d26;
+  --color-text-muted: #6b7280;
+  --color-text-faint: #9ca3af;
+  --color-accent: #0d9488;
+  --color-accent-hover: #0f766e;
+  --color-border: #e2e4e9;
+  --color-card-hover: #f8f9fb;
+}
+
+.dark {
+  --color-bg: #0c0e14;
+  --color-surface: #12151e;
+  --color-surface-2: #181c28;
+  --color-text: #dfe1e8;
+  --color-text-muted: #7c8293;
+  --color-text-faint: #4a5060;
+  --color-accent: #2dd4bf;
+  --color-accent-hover: #14b8a6;
+  --color-border: #1e2230;
+  --color-card-hover: #1a1e2a;
+}
+
+/* ── Base Reset ── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: 'Satoshi', 'Inter', system-ui, sans-serif;
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  line-height: 1.5;
+  min-height: 100dvh;
+}
+
+/* ── Scrollbar (dark) ── */
+.dark ::-webkit-scrollbar { width: 5px; height: 5px; }
+.dark ::-webkit-scrollbar-track { background: transparent; }
+.dark ::-webkit-scrollbar-thumb { background: #2a2e3a; border-radius: 3px; }
+.dark ::-webkit-scrollbar-thumb:hover { background: #3a3e4a; }
+
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+
+/* ── Card hover ── */
+.feed-card {
+  transition: transform 150ms cubic-bezier(0.16, 1, 0.3, 1),
+              background-color 150ms ease,
+              border-color 150ms ease;
+}
+.feed-card:hover {
+  transform: translateY(-1px);
+  background-color: var(--color-card-hover);
+  border-color: var(--color-accent);
+}
+
+/* ── Shimmer skeleton ── */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg,
+    var(--color-surface-2) 25%,
+    var(--color-surface) 50%,
+    var(--color-surface-2) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-radius: 6px;
+}
+
+/* ── Pulse dot ── */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+.pulse-dot { animation: pulse-dot 2s ease-in-out infinite; }
+
+/* ── Category accent colors ── */
+.cat-finance { --cat: #22c55e; }
+.cat-ai { --cat: #8b5cf6; }
+.cat-cyber { --cat: #f59e0b; }
+.cat-news { --cat: #ef4444; }
+
+/* ── Tabular nums for data ── */
+.tabular-nums {
+  font-variant-numeric: tabular-nums lining-nums;
+}
