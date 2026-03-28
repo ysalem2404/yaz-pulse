@@ -111,7 +111,7 @@ export function Sidebar({ active, onNavigate, bookmarkCount }: SidebarProps) {
       {/* Bottom */}
       <div className="px-4 py-3" style={{ borderTop: "1px solid var(--color-border)" }}>
         <p className="text-[10px]" style={{ color: "var(--color-text-faint)" }}>
-          Reddit + RSS + News
+          Reddit + GitHub + AI Blogs
         </p>
         <div className="flex items-center gap-1.5 mt-1">
           <span className="w-1.5 h-1.5 rounded-full bg-green-500 pulse-dot" />

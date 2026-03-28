@@ -1,36 +1,62 @@
 import type { FeedItem, Category } from "./types";
 
 // ── Feed Sources ──
-// Each category has RSS feeds from multiple sources (Reddit + professional outlets)
+// Reddit + GitHub + AI frontier blogs + professional outlets
 const FEED_SOURCES: Record<Category, { url: string; name: string }[]> = {
   finance: [
+    // Reddit
     { url: "https://www.reddit.com/r/investing/.rss", name: "r/investing" },
     { url: "https://www.reddit.com/r/stocks/.rss", name: "r/stocks" },
     { url: "https://www.reddit.com/r/wallstreetbets/.rss", name: "r/wallstreetbets" },
     { url: "https://www.reddit.com/r/CryptoCurrency/.rss", name: "r/CryptoCurrency" },
+    // Professional
     { url: "https://feeds.finance.yahoo.com/rss/2.0/headline?s=^GSPC&region=US&lang=en-US", name: "Yahoo Finance" },
     { url: "https://feeds.feedburner.com/CoinDesk", name: "CoinDesk" },
   ],
   "ai-automation": [
+    // Reddit
     { url: "https://www.reddit.com/r/MachineLearning/.rss", name: "r/MachineLearning" },
     { url: "https://www.reddit.com/r/LocalLLaMA/.rss", name: "r/LocalLLaMA" },
     { url: "https://www.reddit.com/r/artificial/.rss", name: "r/artificial" },
     { url: "https://www.reddit.com/r/ChatGPT/.rss", name: "r/ChatGPT" },
+    // GitHub — Trending & Key Releases
+    { url: "https://mshibanami.github.io/GitHubTrendingRSS/daily/all.xml", name: "GitHub Trending" },
+    { url: "https://github.com/langchain-ai/langchain/releases.atom", name: "LangChain Releases" },
+    { url: "https://github.com/microsoft/autogen/releases.atom", name: "AutoGen Releases" },
+    { url: "https://github.com/huggingface/transformers/releases.atom", name: "Transformers Releases" },
+    // AI Frontier Blogs
+    { url: "https://openai.com/news/rss.xml", name: "OpenAI" },
+    { url: "https://deepmind.google/blog/rss.xml", name: "Google DeepMind" },
+    { url: "https://blog.google/technology/ai/rss/", name: "Google AI Blog" },
+    { url: "https://www.microsoft.com/en-us/ai/blog/feed/", name: "Microsoft AI" },
+    { url: "https://www.databricks.com/feed", name: "Databricks" },
+    { url: "https://huggingface.co/blog/feed.xml", name: "Hugging Face" },
+    { url: "https://blogs.nvidia.com/feed/", name: "NVIDIA" },
+    // Professional
     { url: "https://techcrunch.com/category/artificial-intelligence/feed/", name: "TechCrunch AI" },
     { url: "https://www.artificialintelligence-news.com/feed/", name: "AI News" },
     { url: "https://news.mit.edu/topic/mitartificial-intelligence2-rss.xml", name: "MIT AI" },
   ],
   cybersecurity: [
+    // Reddit
     { url: "https://www.reddit.com/r/cybersecurity/.rss", name: "r/cybersecurity" },
     { url: "https://www.reddit.com/r/netsec/.rss", name: "r/netsec" },
     { url: "https://www.reddit.com/r/hacking/.rss", name: "r/hacking" },
+    // GitHub — Security Tools
+    { url: "https://github.com/projectdiscovery/nuclei/releases.atom", name: "Nuclei Releases" },
+    { url: "https://github.com/OWASP/CheatSheetSeries/releases.atom", name: "OWASP Cheat Sheets" },
+    // Azure & Cloud Security
+    { url: "https://learn.microsoft.com/en-us/azure/databricks/feed.xml", name: "Azure Databricks" },
+    // Professional
     { url: "https://feeds.feedburner.com/TheHackersNews", name: "The Hacker News" },
     { url: "https://krebsonsecurity.com/feed/", name: "Krebs on Security" },
     { url: "https://www.bleepingcomputer.com/feed/", name: "BleepingComputer" },
   ],
   "news-geopolitics": [
+    // Reddit
     { url: "https://www.reddit.com/r/worldnews/.rss", name: "r/worldnews" },
     { url: "https://www.reddit.com/r/geopolitics/.rss", name: "r/geopolitics" },
+    // Professional
     { url: "https://feeds.bbci.co.uk/news/world/rss.xml", name: "BBC World" },
     { url: "https://rss.nytimes.com/services/xml/rss/nyt/World.xml", name: "NYT World" },
     { url: "https://www.aljazeera.com/xml/rss/all.xml", name: "Al Jazeera" },
@@ -148,7 +174,7 @@ export async function fetchAllFeeds(): Promise<Record<Category, FeedItem[]>> {
   const feed: Record<string, FeedItem[]> = {};
   for (const r of results) {
     if (r.status === "fulfilled") {
-      feed[r.value.category] = r.value.items.slice(0, 30);
+      feed[r.value.category] = r.value.items.slice(0, 40);
     }
   }
   return feed as Record<Category, FeedItem[]>;
