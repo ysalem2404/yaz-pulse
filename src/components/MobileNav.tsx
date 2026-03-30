@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { CATEGORIES, CATEGORY_META, type Category } from "@/lib/types";
 import {
-  LayoutDashboard, TrendingUp, Brain, Shield, Globe, Bookmark, Zap, Menu, X,
+  LayoutDashboard, TrendingUp, Brain, Shield, Globe, Bookmark, Zap, Menu, X, KeyRound, Workflow,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -9,6 +9,8 @@ const ICONS: Record<string, typeof TrendingUp> = {
   finance: TrendingUp,
   "ai-automation": Brain,
   cybersecurity: Shield,
+  iam: KeyRound,
+  "intelligent-automation": Workflow,
   "news-geopolitics": Globe,
 };
 

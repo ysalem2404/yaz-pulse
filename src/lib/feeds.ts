@@ -52,6 +52,34 @@ const FEED_SOURCES: Record<Category, { url: string; name: string }[]> = {
     { url: "https://krebsonsecurity.com/feed/", name: "Krebs on Security" },
     { url: "https://www.bleepingcomputer.com/feed/", name: "BleepingComputer" },
   ],
+  iam: [
+    // Reddit
+    { url: "https://www.reddit.com/r/IdentityManagement/.rss", name: "r/IdentityManagement" },
+    { url: "https://www.reddit.com/r/iam/.rss", name: "r/IAM" },
+    // IAM Vendor Blogs
+    { url: "https://jumpcloud.com/feed", name: "JumpCloud" },
+    { url: "https://curity.io/news-feed.xml", name: "Curity" },
+    // IAM Knowledge & Industry
+    { url: "https://identitymanagementinstitute.org/feed/", name: "Identity Mgmt Institute" },
+    // GitHub — IAM Open Source
+    { url: "https://github.com/keycloak/keycloak/releases.atom", name: "Keycloak Releases" },
+    // Intelligent Automation (WorkFusion overlaps compliance/identity)
+    { url: "https://www.workfusion.com/feed", name: "WorkFusion" },
+  ],
+  "intelligent-automation": [
+    // Reddit
+    { url: "https://www.reddit.com/r/automation/.rss", name: "r/automation" },
+    // Automation Platforms
+    { url: "https://www.workfusion.com/feed", name: "WorkFusion" },
+    // GitHub — Automation Tools
+    { url: "https://github.com/n8n-io/n8n/releases.atom", name: "n8n Releases" },
+    { url: "https://github.com/microsoft/autogen/releases.atom", name: "AutoGen Releases" },
+    { url: "https://github.com/langchain-ai/langchain/releases.atom", name: "LangChain Releases" },
+    // AI & Automation Blogs (cross-category)
+    { url: "https://blogs.nvidia.com/feed/", name: "NVIDIA" },
+    { url: "https://www.microsoft.com/en-us/ai/blog/feed/", name: "Microsoft AI" },
+    { url: "https://www.artificialintelligence-news.com/feed/", name: "AI News" },
+  ],
   "news-geopolitics": [
     // Reddit
     { url: "https://www.reddit.com/r/worldnews/.rss", name: "r/worldnews" },
@@ -161,6 +189,8 @@ export async function fetchAllFeeds(): Promise<Record<Category, FeedItem[]>> {
     "finance",
     "ai-automation",
     "cybersecurity",
+    "iam",
+    "intelligent-automation",
     "news-geopolitics",
   ];
 

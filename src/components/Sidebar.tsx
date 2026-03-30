@@ -8,12 +8,16 @@ import {
   Globe,
   Bookmark,
   Zap,
+  KeyRound,
+  Workflow,
 } from "lucide-react";
 
 const CATEGORY_ICONS: Record<Category, typeof TrendingUp> = {
   finance: TrendingUp,
   "ai-automation": Brain,
   cybersecurity: Shield,
+  iam: KeyRound,
+  "intelligent-automation": Workflow,
   "news-geopolitics": Globe,
 };
 

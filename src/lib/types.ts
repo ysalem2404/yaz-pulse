@@ -10,12 +10,14 @@ export interface FeedItem {
   author?: string;
 }
 
-export type Category = "finance" | "ai-automation" | "cybersecurity" | "news-geopolitics";
+export type Category = "finance" | "ai-automation" | "cybersecurity" | "iam" | "intelligent-automation" | "news-geopolitics";
 
 export const CATEGORIES: Category[] = [
   "finance",
   "ai-automation",
   "cybersecurity",
+  "iam",
+  "intelligent-automation",
   "news-geopolitics",
 ];
 
@@ -40,6 +42,18 @@ export const CATEGORY_META: Record<
     color: "#f59e0b",
     cssClass: "cat-cyber",
     icon: "shield",
+  },
+  iam: {
+    label: "Identity & Access Mgmt",
+    color: "#06b6d4",
+    cssClass: "cat-iam",
+    icon: "key-round",
+  },
+  "intelligent-automation": {
+    label: "Intelligent Automation",
+    color: "#ec4899",
+    cssClass: "cat-ia",
+    icon: "workflow",
   },
   "news-geopolitics": {
     label: "News & Geopolitics",
