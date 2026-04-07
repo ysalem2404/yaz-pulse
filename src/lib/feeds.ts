@@ -130,6 +130,31 @@ function hashId(str: string): string {
   return Math.abs(h).toString(36);
 }
 
+const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// Throttled fetch: process feeds in batches of 4 with 1.5s gaps
+// to avoid rss2json rate limits ("converting new feeds too fast")
+async function fetchFeedsBatched(
+  feeds: { url: string; name: string }[],
+  category: Category
+): Promise<FeedItem[]> {
+  const BATCH_SIZE = 4;
+  const BATCH_DELAY = 1500; // ms between batches
+  const all: FeedItem[] = [];
+
+  for (let i = 0; i < feeds.length; i += BATCH_SIZE) {
+    if (i > 0) await delay(BATCH_DELAY);
+    const batch = feeds.slice(i, i + BATCH_SIZE);
+    const results = await Promise.allSettled(
+      batch.map((s) => fetchSingleFeed(s.url, s.name, category))
+    );
+    for (const r of results) {
+      if (r.status === "fulfilled") all.push(...r.value);
+    }
+  }
+  return all;
+}
+
 async function fetchSingleFeed(
   feedUrl: string,
   sourceName: string,
@@ -158,23 +183,7 @@ async function fetchSingleFeed(
   }
 }
 
-export async function fetchCategoryFeed(category: Category): Promise<FeedItem[]> {
-  const sources = FEED_SOURCES[category];
-  const results = await Promise.allSettled(
-    sources.map((s) => fetchSingleFeed(s.url, s.name, category))
-  );
-
-  const items: FeedItem[] = [];
-  for (const r of results) {
-    if (r.status === "fulfilled") items.push(...r.value);
-  }
-
-  // Sort by date descending
-  items.sort(
-    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-  );
-
-  // Deduplicate by URL
+function dedupeByUrl(items: FeedItem[]): FeedItem[] {
   const seen = new Set<string>();
   return items.filter((item) => {
     const key = item.url.replace(/\/$/, "").toLowerCase();
@@ -182,6 +191,17 @@ export async function fetchCategoryFeed(category: Category): Promise<FeedItem[]>
     seen.add(key);
     return true;
   });
+}
+
+export async function fetchCategoryFeed(category: Category): Promise<FeedItem[]> {
+  const sources = FEED_SOURCES[category];
+  const items = await fetchFeedsBatched(sources, category);
+
+  items.sort(
+    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+  );
+
+  return dedupeByUrl(items);
 }
 
 export async function fetchAllFeeds(): Promise<Record<Category, FeedItem[]>> {
@@ -194,18 +214,78 @@ export async function fetchAllFeeds(): Promise<Record<Category, FeedItem[]>> {
     "news-geopolitics",
   ];
 
-  const results = await Promise.allSettled(
-    categories.map(async (cat) => ({
-      category: cat,
-      items: await fetchCategoryFeed(cat),
-    }))
-  );
+  // Collect all unique feed URLs across categories, then fetch once
+  // and distribute items to their categories.
+  const urlToCategories = new Map<string, { name: string; categories: Category[] }>();
 
-  const feed: Record<string, FeedItem[]> = {};
-  for (const r of results) {
-    if (r.status === "fulfilled") {
-      feed[r.value.category] = r.value.items.slice(0, 40);
+  for (const cat of categories) {
+    for (const src of FEED_SOURCES[cat]) {
+      const existing = urlToCategories.get(src.url);
+      if (existing) {
+        existing.categories.push(cat);
+      } else {
+        urlToCategories.set(src.url, { name: src.name, categories: [cat] });
+      }
     }
   }
+
+  // Build deduplicated job list
+  const uniqueFeeds: { url: string; name: string }[] = [];
+  for (const [url, info] of urlToCategories) {
+    uniqueFeeds.push({ url, name: info.name });
+  }
+
+  // Fetch all unique feeds in throttled batches using a dummy category
+  // then redistribute
+  const BATCH_SIZE = 4;
+  const BATCH_DELAY = 1500;
+  const rawByUrl = new Map<string, Rss2JsonItem[]>();
+
+  for (let i = 0; i < uniqueFeeds.length; i += BATCH_SIZE) {
+    if (i > 0) await delay(BATCH_DELAY);
+    const batch = uniqueFeeds.slice(i, i + BATCH_SIZE);
+    const results = await Promise.allSettled(
+      batch.map(async (feed) => {
+        const encoded = encodeURIComponent(feed.url);
+        const res = await fetch(`${RSS2JSON_BASE}?rss_url=${encoded}`);
+        if (!res.ok) return { url: feed.url, items: [] as Rss2JsonItem[] };
+        const data: Rss2JsonResponse = await res.json();
+        return { url: feed.url, items: data.status === "ok" ? data.items : [] };
+      })
+    );
+    for (const r of results) {
+      if (r.status === "fulfilled" && r.value.items.length > 0) {
+        rawByUrl.set(r.value.url, r.value.items);
+      }
+    }
+  }
+
+  // Distribute fetched items to categories
+  const feed: Record<string, FeedItem[]> = {};
+  for (const cat of categories) {
+    const items: FeedItem[] = [];
+    for (const src of FEED_SOURCES[cat]) {
+      const raw = rawByUrl.get(src.url);
+      if (!raw) continue;
+      for (const item of raw) {
+        items.push({
+          id: `${src.name}-${hashId(item.link || item.guid)}`,
+          title: cleanHTML(item.title),
+          url: item.link,
+          source: src.name,
+          snippet: item.description ? cleanHTML(item.description).substring(0, 250) : undefined,
+          category: cat,
+          timestamp: item.pubDate || new Date().toISOString(),
+          thumbnail: item.thumbnail || undefined,
+          author: item.author || undefined,
+        });
+      }
+    }
+    items.sort(
+      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    );
+    feed[cat] = dedupeByUrl(items).slice(0, 40);
+  }
+
   return feed as Record<Category, FeedItem[]>;
 }
