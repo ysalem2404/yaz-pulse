@@ -132,14 +132,14 @@ function hashId(str: string): string {
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-// Throttled fetch: process feeds in batches of 4 with 1.5s gaps
-// to avoid rss2json rate limits ("converting new feeds too fast")
+// Throttled fetch: process feeds in batches of 3 with 2s gaps
+// to avoid rss2json rate limits
 async function fetchFeedsBatched(
   feeds: { url: string; name: string }[],
   category: Category
 ): Promise<FeedItem[]> {
-  const BATCH_SIZE = 4;
-  const BATCH_DELAY = 1500; // ms between batches
+  const BATCH_SIZE = 3;
+  const BATCH_DELAY = 2000;
   const all: FeedItem[] = [];
 
   for (let i = 0; i < feeds.length; i += BATCH_SIZE) {
@@ -235,27 +235,50 @@ export async function fetchAllFeeds(): Promise<Record<Category, FeedItem[]>> {
     uniqueFeeds.push({ url, name: info.name });
   }
 
-  // Fetch all unique feeds in throttled batches using a dummy category
-  // then redistribute
-  const BATCH_SIZE = 4;
-  const BATCH_DELAY = 1500;
+  // Fetch all unique feeds in throttled batches (3 at a time, 2s gaps)
+  const BATCH_SIZE = 3;
+  const BATCH_DELAY = 2000;
   const rawByUrl = new Map<string, Rss2JsonItem[]>();
+
+  async function fetchOne(feedUrl: string): Promise<{ url: string; items: Rss2JsonItem[] }> {
+    try {
+      const encoded = encodeURIComponent(feedUrl);
+      const res = await fetch(`${RSS2JSON_BASE}?rss_url=${encoded}`);
+      if (!res.ok) return { url: feedUrl, items: [] };
+      const data: Rss2JsonResponse = await res.json();
+      return { url: feedUrl, items: data.status === "ok" ? data.items : [] };
+    } catch {
+      return { url: feedUrl, items: [] };
+    }
+  }
+
+  const failed: { url: string; name: string }[] = [];
 
   for (let i = 0; i < uniqueFeeds.length; i += BATCH_SIZE) {
     if (i > 0) await delay(BATCH_DELAY);
     const batch = uniqueFeeds.slice(i, i + BATCH_SIZE);
-    const results = await Promise.allSettled(
-      batch.map(async (feed) => {
-        const encoded = encodeURIComponent(feed.url);
-        const res = await fetch(`${RSS2JSON_BASE}?rss_url=${encoded}`);
-        if (!res.ok) return { url: feed.url, items: [] as Rss2JsonItem[] };
-        const data: Rss2JsonResponse = await res.json();
-        return { url: feed.url, items: data.status === "ok" ? data.items : [] };
-      })
-    );
-    for (const r of results) {
+    const results = await Promise.allSettled(batch.map((f) => fetchOne(f.url)));
+    for (let j = 0; j < results.length; j++) {
+      const r = results[j];
       if (r.status === "fulfilled" && r.value.items.length > 0) {
         rawByUrl.set(r.value.url, r.value.items);
+      } else {
+        failed.push(batch[j]);
+      }
+    }
+  }
+
+  // Retry failed feeds once (rate limit may have cleared)
+  if (failed.length > 0) {
+    await delay(3000);
+    for (let i = 0; i < failed.length; i += BATCH_SIZE) {
+      if (i > 0) await delay(BATCH_DELAY);
+      const batch = failed.slice(i, i + BATCH_SIZE);
+      const results = await Promise.allSettled(batch.map((f) => fetchOne(f.url)));
+      for (const r of results) {
+        if (r.status === "fulfilled" && r.value.items.length > 0) {
+          rawByUrl.set(r.value.url, r.value.items);
+        }
       }
     }
   }
