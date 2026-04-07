@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { Sidebar } from "@/components/Sidebar";
 import { MobileNav } from "@/components/MobileNav";
@@ -7,9 +7,9 @@ import { CategoryHeader } from "@/components/CategoryHeader";
 import { FeedSkeleton } from "@/components/Skeleton";
 import { fetchAllFeeds, fetchCategoryFeed, getCacheAge } from "@/lib/feeds";
 import { CATEGORIES, CATEGORY_META, type Category, type FeedItem } from "@/lib/types";
-import { RefreshCw, Zap, Bookmark as BookmarkIcon, Trash2 } from "lucide-react";
+import { RefreshCw, Zap, Bookmark as BookmarkIcon, Trash2, Search, X } from "lucide-react";
 
-const CACHE_TTL = 2 * 60 * 1000; // must match feeds.ts
+const CACHE_TTL = 2 * 60 * 1000;
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -21,6 +21,18 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+/** Case-insensitive search across title, source, snippet */
+function filterItems(items: FeedItem[], query: string): FeedItem[] {
+  if (!query.trim()) return items;
+  const q = query.toLowerCase();
+  return items.filter(
+    (item) =>
+      item.title.toLowerCase().includes(q) ||
+      item.source.toLowerCase().includes(q) ||
+      (item.snippet && item.snippet.toLowerCase().includes(q))
+  );
+}
 
 function Dashboard() {
   const [view, setView] = useState<string>("all");
@@ -50,10 +62,8 @@ function Dashboard() {
 
   return (
     <>
-      {/* Mobile nav */}
       <MobileNav active={view} onNavigate={setView} />
 
-      {/* Desktop layout */}
       <div className="hidden md:flex h-screen overflow-hidden">
         <Sidebar active={view} onNavigate={setView} bookmarkCount={bookmarks.length} />
         <main className="flex-1 overflow-hidden flex flex-col">
@@ -67,7 +77,6 @@ function Dashboard() {
         </main>
       </div>
 
-      {/* Mobile layout */}
       <div className="md:hidden">
         {view === "bookmarks" ? (
           <BookmarksView bookmarks={bookmarks} onRemove={removeBookmark} />
@@ -83,28 +92,49 @@ function Dashboard() {
 
 /* ── All Feeds View ── */
 function AllFeedsView({ onBookmark }: { onBookmark: (item: FeedItem) => void }) {
-  const { data, isLoading, refetch, isRefetching, dataUpdatedAt } = useQuery({
+  const [searchQuery, setSearchQuery] = useState("");
+  const { data, isLoading, dataUpdatedAt } = useQuery({
     queryKey: ["all-feeds"],
     queryFn: () => fetchAllFeeds(false),
   });
 
-  // Force-refresh: invalidate React Query cache so it calls fetchAllFeeds again
-  // The feeds layer handles delta logic internally
   const handleRefresh = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["all-feeds"] });
   }, []);
 
-  const totalItems = data
+  // Filter each category's items
+  const filteredData = useMemo(() => {
+    if (!data || !searchQuery.trim()) return data;
+    const result: Record<string, FeedItem[]> = {};
+    for (const cat of CATEGORIES) {
+      result[cat] = filterItems(data[cat] || [], searchQuery);
+    }
+    return result as Record<Category, FeedItem[]>;
+  }, [data, searchQuery]);
+
+  const totalItems = filteredData
+    ? Object.values(filteredData).reduce((sum, items) => sum + items.length, 0)
+    : 0;
+
+  const totalUnfiltered = data
     ? Object.values(data).reduce((sum, items) => sum + items.length, 0)
     : 0;
+
+  const label = isLoading
+    ? "Loading feeds..."
+    : searchQuery.trim()
+      ? `${totalItems} of ${totalUnfiltered} articles match`
+      : `${totalItems} articles across ${CATEGORIES.length} topics`;
 
   return (
     <div className="flex-1 overflow-y-auto scrollbar-hide">
       <TopBar
-        label={isLoading ? "Loading feeds..." : `${totalItems} articles across ${CATEGORIES.length} topics`}
+        label={label}
         onRefresh={handleRefresh}
-        isRefreshing={isLoading || isRefetching}
+        isRefreshing={isLoading}
         dataUpdatedAt={dataUpdatedAt}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
       />
       <div className="p-4 sm:p-6 space-y-8">
         {isLoading ? (
@@ -113,7 +143,8 @@ function AllFeedsView({ onBookmark }: { onBookmark: (item: FeedItem) => void }) 
           ))
         ) : (
           CATEGORIES.map((cat) => {
-            const items = data?.[cat] || [];
+            const items = filteredData?.[cat] || [];
+            if (searchQuery.trim() && items.length === 0) return null;
             return (
               <section key={cat}>
                 <CategoryHeader category={cat} itemCount={items.length} />
@@ -144,6 +175,7 @@ function CategoryView({
   category: Category;
   onBookmark: (item: FeedItem) => void;
 }) {
+  const [searchQuery, setSearchQuery] = useState("");
   const { data, isLoading, isRefetching, dataUpdatedAt } = useQuery({
     queryKey: ["feed", category],
     queryFn: () => fetchCategoryFeed(category, false),
@@ -154,15 +186,29 @@ function CategoryView({
   }, [category]);
 
   const meta = CATEGORY_META[category];
-  const items = data || [];
+  const allItems = data || [];
+  const items = useMemo(() => filterItems(allItems, searchQuery), [allItems, searchQuery]);
+
+  const label = isLoading
+    ? "Loading..."
+    : searchQuery.trim()
+      ? `${items.length} of ${allItems.length} articles match`
+      : `${items.length} articles in ${meta.label}`;
+
+  // Reset search when switching categories
+  useEffect(() => {
+    setSearchQuery("");
+  }, [category]);
 
   return (
     <div className="flex-1 overflow-y-auto scrollbar-hide">
       <TopBar
-        label={isLoading ? "Loading..." : `${items.length} articles in ${meta.label}`}
+        label={label}
         onRefresh={handleRefresh}
         isRefreshing={isLoading || isRefetching}
         dataUpdatedAt={dataUpdatedAt}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
       />
       <div className="p-4 sm:p-6">
         {isLoading ? (
@@ -171,7 +217,7 @@ function CategoryView({
           <>
             <CategoryHeader category={category} itemCount={items.length} />
             {items.length === 0 ? (
-              <EmptyState text="No articles found. Try refreshing." />
+              <EmptyState text={searchQuery.trim() ? "No articles match your search." : "No articles found. Try refreshing."} />
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
                 {items.map((item) => (
@@ -195,15 +241,25 @@ function BookmarksView({
   bookmarks: FeedItem[];
   onRemove: (url: string) => void;
 }) {
+  const [searchQuery, setSearchQuery] = useState("");
+  const filtered = useMemo(() => filterItems(bookmarks, searchQuery), [bookmarks, searchQuery]);
+
   return (
     <div className="flex-1 overflow-y-auto scrollbar-hide">
       <div className="sticky top-0 z-10 px-4 sm:px-6 py-3 backdrop-blur-md"
         style={{ background: "var(--color-bg)", borderBottom: "1px solid var(--color-border)" }}>
-        <div className="flex items-center gap-2">
-          <BookmarkIcon className="w-4 h-4" style={{ color: "var(--color-accent)" }} />
-          <span className="text-sm font-medium" style={{ color: "var(--color-text)" }}>
-            {bookmarks.length} saved {bookmarks.length === 1 ? "item" : "items"}
-          </span>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <BookmarkIcon className="w-4 h-4" style={{ color: "var(--color-accent)" }} />
+            <span className="text-sm font-medium" style={{ color: "var(--color-text)" }}>
+              {searchQuery.trim()
+                ? `${filtered.length} of ${bookmarks.length} saved`
+                : `${bookmarks.length} saved ${bookmarks.length === 1 ? "item" : "items"}`}
+            </span>
+          </div>
+          {bookmarks.length > 0 && (
+            <SearchInput value={searchQuery} onChange={setSearchQuery} />
+          )}
         </div>
       </div>
       <div className="p-4 sm:p-6">
@@ -219,9 +275,11 @@ function BookmarksView({
               Save articles from your feed by hovering a card and clicking the bookmark icon.
             </p>
           </div>
+        ) : filtered.length === 0 ? (
+          <EmptyState text="No bookmarks match your search." />
         ) : (
           <div className="space-y-2">
-            {bookmarks.map((bm) => (
+            {filtered.map((bm) => (
               <div key={bm.url}
                 className="flex items-start gap-3 p-3 rounded-lg group transition-colors"
                 style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)" }}>
@@ -262,6 +320,74 @@ function BookmarksView({
 
 /* ── Shared Components ── */
 
+function SearchInput({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [expanded, setExpanded] = useState(false);
+
+  const handleToggle = useCallback(() => {
+    if (expanded && value) {
+      onChange("");
+    }
+    setExpanded((prev) => !prev);
+  }, [expanded, value, onChange]);
+
+  useEffect(() => {
+    if (expanded && inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [expanded]);
+
+  return (
+    <div className="flex items-center gap-1">
+      {expanded && (
+        <div className="relative">
+          <input
+            ref={inputRef}
+            type="text"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder="Search articles..."
+            className="text-sm py-1 pl-2 pr-7 rounded-md outline-none transition-all"
+            style={{
+              width: "180px",
+              background: "var(--color-surface)",
+              border: "1px solid var(--color-border)",
+              color: "var(--color-text)",
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                onChange("");
+                setExpanded(false);
+              }
+            }}
+          />
+          {value && (
+            <button
+              onClick={() => onChange("")}
+              className="absolute right-1.5 top-1/2 -translate-y-1/2"
+              style={{ color: "var(--color-text-faint)" }}>
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+      )}
+      <button
+        onClick={handleToggle}
+        className="w-8 h-8 flex items-center justify-center rounded-md transition-colors"
+        style={{ color: expanded ? "var(--color-accent)" : "var(--color-text-muted)" }}
+        title="Search articles">
+        <Search className="w-4 h-4" />
+      </button>
+    </div>
+  );
+}
+
 function formatAge(ms: number): string {
   const sec = Math.floor(ms / 1000);
   if (sec < 60) return `${sec}s ago`;
@@ -274,13 +400,16 @@ function TopBar({
   onRefresh,
   isRefreshing,
   dataUpdatedAt,
+  searchQuery,
+  onSearchChange,
 }: {
   label: string;
   onRefresh: () => void;
   isRefreshing: boolean;
   dataUpdatedAt?: number;
+  searchQuery: string;
+  onSearchChange: (v: string) => void;
 }) {
-  // Live-updating cache age display
   const [ageText, setAgeText] = useState("");
   const intervalRef = useRef<ReturnType<typeof setInterval>>();
 
@@ -303,26 +432,29 @@ function TopBar({
   return (
     <div className="sticky top-0 z-10 px-4 sm:px-6 py-3 flex items-center justify-between backdrop-blur-md"
       style={{ background: "var(--color-bg)", borderBottom: "1px solid var(--color-border)" }}>
-      <div className="flex items-center gap-3">
-        <div className="flex items-center gap-2">
+      <div className="flex items-center gap-3 min-w-0">
+        <div className="flex items-center gap-2 shrink-0">
           <Zap className="w-4 h-4" style={{ color: "var(--color-accent)" }} />
-          <span className="text-sm font-medium" style={{ color: "var(--color-text)" }}>{label}</span>
+          <span className="text-sm font-medium truncate" style={{ color: "var(--color-text)" }}>{label}</span>
         </div>
         {ageText && (
-          <span className="text-xs hidden sm:inline" style={{ color: "var(--color-text-faint)" }}>
+          <span className="text-xs hidden sm:inline shrink-0" style={{ color: "var(--color-text-faint)" }}>
             {ageText}
           </span>
         )}
       </div>
-      <button onClick={onRefresh} disabled={isRefreshing}
-        className="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm transition-colors"
-        style={{
-          color: "var(--color-text-muted)",
-          background: isRefreshing ? "var(--color-surface-2)" : "transparent",
-        }}>
-        <RefreshCw className={`w-4 h-4 ${isRefreshing ? "animate-spin" : ""}`} />
-        <span className="hidden sm:inline">Refresh</span>
-      </button>
+      <div className="flex items-center gap-1 shrink-0">
+        <SearchInput value={searchQuery} onChange={onSearchChange} />
+        <button onClick={onRefresh} disabled={isRefreshing}
+          className="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm transition-colors"
+          style={{
+            color: "var(--color-text-muted)",
+            background: isRefreshing ? "var(--color-surface-2)" : "transparent",
+          }}>
+          <RefreshCw className={`w-4 h-4 ${isRefreshing ? "animate-spin" : ""}`} />
+          <span className="hidden sm:inline">Refresh</span>
+        </button>
+      </div>
     </div>
   );
 }
