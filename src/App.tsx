@@ -26,14 +26,14 @@ function Dashboard() {
   const [view, setView] = useState<string>("all");
   const [bookmarks, setBookmarks] = useState<FeedItem[]>(() => {
     try {
-      const saved = localStorage.getItem("yaz-pulse-bookmarks");
+      const saved = localStorage.getItem("thalassa-pulse-bookmarks");
       return saved ? JSON.parse(saved) : [];
     } catch { return []; }
   });
 
   useEffect(() => {
     try {
-      localStorage.setItem("yaz-pulse-bookmarks", JSON.stringify(bookmarks));
+      localStorage.setItem("thalassa-pulse-bookmarks", JSON.stringify(bookmarks));
     } catch {}
   }, [bookmarks]);
 

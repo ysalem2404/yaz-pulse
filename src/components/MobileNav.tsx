@@ -33,7 +33,7 @@ export function MobileNav({ active, onNavigate }: MobileNavProps) {
         style={{ background: "var(--color-bg)", borderBottom: "1px solid var(--color-border)" }}>
         <div className="flex items-center gap-2">
           <Zap className="w-4 h-4" style={{ color: "var(--color-accent)" }} />
-          <span className="text-sm font-bold" style={{ color: "var(--color-text)" }}>Yaz Pulse</span>
+          <span className="text-sm font-bold" style={{ color: "var(--color-text)" }}>Thalassa Pulse</span>
         </div>
         <button onClick={() => setOpen(!open)}
           className="w-8 h-8 flex items-center justify-center rounded-md"

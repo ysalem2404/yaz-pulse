@@ -40,7 +40,7 @@ export function Sidebar({ active, onNavigate, bookmarkCount }: SidebarProps) {
         </div>
         <div>
           <h1 className="text-sm font-bold leading-none tracking-tight"
-            style={{ color: "var(--color-text)" }}>Yaz Pulse</h1>
+            style={{ color: "var(--color-text)" }}>Thalassa Pulse</h1>
           <p className="text-[10px] leading-none mt-0.5"
             style={{ color: "var(--color-text-faint)" }}>Intelligence Feed</p>
         </div>
