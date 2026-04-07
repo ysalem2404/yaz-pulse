@@ -5,7 +5,7 @@ import { MobileNav } from "@/components/MobileNav";
 import { FeedCard } from "@/components/FeedCard";
 import { CategoryHeader } from "@/components/CategoryHeader";
 import { FeedSkeleton } from "@/components/Skeleton";
-import { fetchAllFeeds, fetchCategoryFeed, getCacheAge } from "@/lib/feeds";
+import { fetchAllFeeds, fetchCategoryFeed, getCacheAge, setProgressCallback } from "@/lib/feeds";
 import { CATEGORIES, CATEGORY_META, type Category, type FeedItem } from "@/lib/types";
 import { RefreshCw, Zap, Bookmark as BookmarkIcon, Trash2, Search, X } from "lucide-react";
 
@@ -93,51 +93,68 @@ function Dashboard() {
 /* ── All Feeds View ── */
 function AllFeedsView({ onBookmark }: { onBookmark: (item: FeedItem) => void }) {
   const [searchQuery, setSearchQuery] = useState("");
+  const [streamData, setStreamData] = useState<Record<Category, FeedItem[]> | null>(null);
+
   const { data, isLoading, dataUpdatedAt } = useQuery({
     queryKey: ["all-feeds"],
     queryFn: () => fetchAllFeeds(false),
   });
 
+  // Stream partial results while loading
+  useEffect(() => {
+    if (isLoading) {
+      setProgressCallback((partial) => setStreamData({ ...partial }));
+    } else {
+      setProgressCallback(null);
+      setStreamData(null);
+    }
+    return () => setProgressCallback(null);
+  }, [isLoading]);
+
+  const displayData = data || streamData;
+  const isStreaming = isLoading && streamData !== null;
+
   const handleRefresh = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["all-feeds"] });
   }, []);
 
-  // Filter each category's items
   const filteredData = useMemo(() => {
-    if (!data || !searchQuery.trim()) return data;
+    if (!displayData || !searchQuery.trim()) return displayData;
     const result: Record<string, FeedItem[]> = {};
     for (const cat of CATEGORIES) {
-      result[cat] = filterItems(data[cat] || [], searchQuery);
+      result[cat] = filterItems(displayData[cat] || [], searchQuery);
     }
     return result as Record<Category, FeedItem[]>;
-  }, [data, searchQuery]);
+  }, [displayData, searchQuery]);
 
   const totalItems = filteredData
     ? Object.values(filteredData).reduce((sum, items) => sum + items.length, 0)
     : 0;
 
-  const totalUnfiltered = data
-    ? Object.values(data).reduce((sum, items) => sum + items.length, 0)
+  const totalUnfiltered = displayData
+    ? Object.values(displayData).reduce((sum, items) => sum + items.length, 0)
     : 0;
 
-  const label = isLoading
+  const label = isLoading && !isStreaming
     ? "Loading feeds..."
-    : searchQuery.trim()
-      ? `${totalItems} of ${totalUnfiltered} articles match`
-      : `${totalItems} articles across ${CATEGORIES.length} topics`;
+    : isStreaming
+      ? `Loading... ${totalUnfiltered} articles so far`
+      : searchQuery.trim()
+        ? `${totalItems} of ${totalUnfiltered} articles match`
+        : `${totalItems} articles across ${CATEGORIES.length} topics`;
 
   return (
     <div className="flex-1 overflow-y-auto scrollbar-hide">
       <TopBar
         label={label}
         onRefresh={handleRefresh}
-        isRefreshing={isLoading}
+        isRefreshing={isLoading && !isStreaming}
         dataUpdatedAt={dataUpdatedAt}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
       />
       <div className="p-4 sm:p-6 space-y-8">
-        {isLoading ? (
+        {isLoading && !isStreaming ? (
           CATEGORIES.map((cat) => (
             <div key={cat}><FeedSkeleton count={3} /></div>
           ))
@@ -149,7 +166,9 @@ function AllFeedsView({ onBookmark }: { onBookmark: (item: FeedItem) => void }) 
               <section key={cat}>
                 <CategoryHeader category={cat} itemCount={items.length} />
                 {items.length === 0 ? (
-                  <EmptyState text={`No articles found for ${CATEGORY_META[cat].label}`} />
+                  isStreaming
+                    ? <FeedSkeleton count={3} />
+                    : <EmptyState text={`No articles found for ${CATEGORY_META[cat].label}`} />
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
                     {items.slice(0, 9).map((item) => (

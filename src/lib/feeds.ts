@@ -71,23 +71,29 @@ const FEED_SOURCES: Record<Category, { url: string; name: string }[]> = {
 
 // ── Config ──
 const RSS2JSON_BASE = "https://api.rss2json.com/v1/api.json";
-const CACHE_TTL_MS = 2 * 60 * 1000;     // 2 min — feeds within this window are skipped on refresh
-const BATCH_SIZE = 3;                     // concurrent requests per batch
-const BATCH_DELAY = 2000;                 // ms between batches
-const RETRY_DELAY = 3000;                 // ms before retry pass
+const CACHE_TTL_MS = 2 * 60 * 1000;     // 2 min
+const BATCH_SIZE = 2;                     // only 2 concurrent requests
+const BATCH_DELAY = 3000;                 // 3s between batches
+const RETRY_DELAY = 5000;                 // 5s before retry pass
 
 // ── Per-URL cache ──
-// Stores raw RSS items keyed by feed URL, with a per-URL timestamp.
-// On delta refresh, only URLs older than CACHE_TTL are re-fetched.
 interface UrlCacheEntry {
   items: Rss2JsonItem[];
   fetchedAt: number;
 }
 const urlCache = new Map<string, UrlCacheEntry>();
 
-// Assembled results cache (avoids re-computing category distribution)
+// Assembled results cache
 let assembledCache: { data: Record<Category, FeedItem[]>; timestamp: number } | null = null;
 let fetchInProgress: Promise<Record<Category, FeedItem[]>> | null = null;
+
+// Progress callback for streaming updates
+type ProgressCallback = (partial: Record<Category, FeedItem[]>) => void;
+let progressCallback: ProgressCallback | null = null;
+
+export function setProgressCallback(cb: ProgressCallback | null) {
+  progressCallback = cb;
+}
 
 // ── RSS types & helpers ──
 
@@ -160,7 +166,7 @@ function mapRawToFeedItems(
   }));
 }
 
-// ── Throttled fetcher with per-URL caching ──
+// ── Fetcher ──
 
 async function fetchOneRaw(
   feedUrl: string
@@ -171,7 +177,6 @@ async function fetchOneRaw(
     if (!res.ok) return { url: feedUrl, items: [] };
     const data: Rss2JsonResponse = await res.json();
     const items = data.status === "ok" ? data.items : [];
-    // Update per-URL cache on success
     if (items.length > 0) {
       urlCache.set(feedUrl, { items, fetchedAt: Date.now() });
     }
@@ -182,16 +187,13 @@ async function fetchOneRaw(
 }
 
 /**
- * Fetch a list of feed URLs in throttled batches.
- * - `staleOnly` = true  → skip URLs whose cache is fresh (delta mode)
- * - `staleOnly` = false → fetch everything (cold start)
- * Returns the full urlCache map (including URLs that were skipped).
+ * Fetch URLs in throttled batches (2 at a time, 3s gaps).
+ * Calls progressCallback after each batch so the UI can update progressively.
  */
 async function fetchUrls(
   feeds: { url: string; name: string }[],
   staleOnly: boolean
 ): Promise<void> {
-  // Determine which URLs actually need fetching
   const toFetch = staleOnly
     ? feeds.filter((f) => {
         const cached = urlCache.get(f.url);
@@ -199,7 +201,7 @@ async function fetchUrls(
       })
     : feeds;
 
-  if (toFetch.length === 0) return; // everything is fresh
+  if (toFetch.length === 0) return;
 
   const failed: { url: string; name: string }[] = [];
 
@@ -215,20 +217,27 @@ async function fetchUrls(
         failed.push(batch[j]);
       }
     }
+    // Emit progress after each batch so UI can render partial results
+    if (progressCallback) {
+      progressCallback(assembleFromCache());
+    }
   }
 
-  // Retry failed once
+  // Retry failed once after cooldown
   if (failed.length > 0) {
     await delay(RETRY_DELAY);
     for (let i = 0; i < failed.length; i += BATCH_SIZE) {
       if (i > 0) await delay(BATCH_DELAY);
       const batch = failed.slice(i, i + BATCH_SIZE);
       await Promise.allSettled(batch.map((f) => fetchOneRaw(f.url)));
+      if (progressCallback) {
+        progressCallback(assembleFromCache());
+      }
     }
   }
 }
 
-// ── Assemble categories from per-URL cache ──
+// ── Assembly ──
 
 const ALL_CATEGORIES: Category[] = [
   "finance",
@@ -257,7 +266,6 @@ function assembleFromCache(): Record<Category, FeedItem[]> {
   return feed as Record<Category, FeedItem[]>;
 }
 
-// Build deduplicated list of all feed URLs (shared across categories)
 function getUniqueFeeds(): { url: string; name: string }[] {
   const seen = new Map<string, string>();
   const result: { url: string; name: string }[] = [];
@@ -274,16 +282,12 @@ function getUniqueFeeds(): { url: string; name: string }[] {
 
 // ── Public API ──
 
-/**
- * Fetch feeds for a single category.
- * Uses per-URL cache; only re-fetches stale URLs.
- */
 export async function fetchCategoryFeed(
   category: Category,
   force = false
 ): Promise<FeedItem[]> {
   const sources = FEED_SOURCES[category];
-  await fetchUrls(sources, !force); // delta unless forced
+  await fetchUrls(sources, !force);
 
   const items: FeedItem[] = [];
   for (const src of sources) {
@@ -298,35 +302,22 @@ export async function fetchCategoryFeed(
   return dedupeByUrl(items);
 }
 
-/**
- * Fetch all categories.
- *
- * On first call: fetches all 47 unique URLs in throttled batches.
- * On subsequent calls within 2 min: returns cached result instantly.
- * On refresh (force=false after 2 min): only re-fetches stale URLs (delta),
- *   merges with still-fresh cached URLs, and returns the combined result.
- * On force refresh: re-fetches everything regardless.
- */
 export async function fetchAllFeeds(
   force = false
 ): Promise<Record<Category, FeedItem[]>> {
-  // If assembled cache is fresh and not forcing, return instantly
+  // Return cache instantly if fresh
   if (!force && assembledCache && Date.now() - assembledCache.timestamp < CACHE_TTL_MS) {
     return assembledCache.data;
   }
 
-  // Prevent duplicate parallel fetches
+  // Prevent duplicate fetches
   if (fetchInProgress) return fetchInProgress;
 
   fetchInProgress = (async () => {
     try {
       const uniqueFeeds = getUniqueFeeds();
-
-      // Delta mode: skip fresh URLs. Force mode: fetch all.
       await fetchUrls(uniqueFeeds, !force);
 
-      // Assemble from per-URL cache (includes both fresh-from-network
-      // and still-valid cached entries)
       const result = assembleFromCache();
       assembledCache = { data: result, timestamp: Date.now() };
       return result;
@@ -338,7 +329,6 @@ export async function fetchAllFeeds(
   return fetchInProgress;
 }
 
-/** Returns age of assembled cache in ms, or null if empty */
 export function getCacheAge(): number | null {
   if (!assembledCache) return null;
   return Date.now() - assembledCache.timestamp;
