@@ -1,18 +1,21 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { Sidebar } from "@/components/Sidebar";
 import { MobileNav } from "@/components/MobileNav";
 import { FeedCard } from "@/components/FeedCard";
 import { CategoryHeader } from "@/components/CategoryHeader";
 import { FeedSkeleton } from "@/components/Skeleton";
-import { fetchAllFeeds, fetchCategoryFeed } from "@/lib/feeds";
+import { fetchAllFeeds, fetchCategoryFeed, getCacheAge } from "@/lib/feeds";
 import { CATEGORIES, CATEGORY_META, type Category, type FeedItem } from "@/lib/types";
 import { RefreshCw, Zap, Bookmark as BookmarkIcon, Trash2 } from "lucide-react";
+
+const CACHE_TTL = 2 * 60 * 1000; // must match feeds.ts
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 5 * 60 * 1000,
+      staleTime: CACHE_TTL,
+      gcTime: CACHE_TTL * 2,
       refetchOnWindowFocus: false,
       retry: 1,
     },
@@ -80,10 +83,16 @@ function Dashboard() {
 
 /* ── All Feeds View ── */
 function AllFeedsView({ onBookmark }: { onBookmark: (item: FeedItem) => void }) {
-  const { data, isLoading, refetch, isRefetching } = useQuery({
+  const { data, isLoading, refetch, isRefetching, dataUpdatedAt } = useQuery({
     queryKey: ["all-feeds"],
-    queryFn: fetchAllFeeds,
+    queryFn: () => fetchAllFeeds(false),
   });
+
+  // Force-refresh: invalidate React Query cache so it calls fetchAllFeeds again
+  // The feeds layer handles delta logic internally
+  const handleRefresh = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["all-feeds"] });
+  }, []);
 
   const totalItems = data
     ? Object.values(data).reduce((sum, items) => sum + items.length, 0)
@@ -93,8 +102,9 @@ function AllFeedsView({ onBookmark }: { onBookmark: (item: FeedItem) => void }) 
     <div className="flex-1 overflow-y-auto scrollbar-hide">
       <TopBar
         label={isLoading ? "Loading feeds..." : `${totalItems} articles across ${CATEGORIES.length} topics`}
-        onRefresh={() => refetch()}
+        onRefresh={handleRefresh}
         isRefreshing={isLoading || isRefetching}
+        dataUpdatedAt={dataUpdatedAt}
       />
       <div className="p-4 sm:p-6 space-y-8">
         {isLoading ? (
@@ -134,10 +144,14 @@ function CategoryView({
   category: Category;
   onBookmark: (item: FeedItem) => void;
 }) {
-  const { data, isLoading, refetch, isRefetching } = useQuery({
+  const { data, isLoading, isRefetching, dataUpdatedAt } = useQuery({
     queryKey: ["feed", category],
-    queryFn: () => fetchCategoryFeed(category),
+    queryFn: () => fetchCategoryFeed(category, false),
   });
+
+  const handleRefresh = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["feed", category] });
+  }, [category]);
 
   const meta = CATEGORY_META[category];
   const items = data || [];
@@ -146,8 +160,9 @@ function CategoryView({
     <div className="flex-1 overflow-y-auto scrollbar-hide">
       <TopBar
         label={isLoading ? "Loading..." : `${items.length} articles in ${meta.label}`}
-        onRefresh={() => refetch()}
+        onRefresh={handleRefresh}
         isRefreshing={isLoading || isRefetching}
+        dataUpdatedAt={dataUpdatedAt}
       />
       <div className="p-4 sm:p-6">
         {isLoading ? (
@@ -246,15 +261,45 @@ function BookmarksView({
 }
 
 /* ── Shared Components ── */
+
+function formatAge(ms: number): string {
+  const sec = Math.floor(ms / 1000);
+  if (sec < 60) return `${sec}s ago`;
+  const min = Math.floor(sec / 60);
+  return `${min}m ago`;
+}
+
 function TopBar({
   label,
   onRefresh,
   isRefreshing,
+  dataUpdatedAt,
 }: {
   label: string;
   onRefresh: () => void;
   isRefreshing: boolean;
+  dataUpdatedAt?: number;
 }) {
+  // Live-updating cache age display
+  const [ageText, setAgeText] = useState("");
+  const intervalRef = useRef<ReturnType<typeof setInterval>>();
+
+  useEffect(() => {
+    function tick() {
+      const age = getCacheAge();
+      if (age !== null) {
+        setAgeText(formatAge(age));
+      } else if (dataUpdatedAt && dataUpdatedAt > 0) {
+        setAgeText(formatAge(Date.now() - dataUpdatedAt));
+      } else {
+        setAgeText("");
+      }
+    }
+    tick();
+    intervalRef.current = setInterval(tick, 5000);
+    return () => clearInterval(intervalRef.current);
+  }, [dataUpdatedAt]);
+
   return (
     <div className="sticky top-0 z-10 px-4 sm:px-6 py-3 flex items-center justify-between backdrop-blur-md"
       style={{ background: "var(--color-bg)", borderBottom: "1px solid var(--color-border)" }}>
@@ -263,9 +308,11 @@ function TopBar({
           <Zap className="w-4 h-4" style={{ color: "var(--color-accent)" }} />
           <span className="text-sm font-medium" style={{ color: "var(--color-text)" }}>{label}</span>
         </div>
-        <span className="text-xs hidden sm:inline" style={{ color: "var(--color-text-faint)" }}>
-          Updated {new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-        </span>
+        {ageText && (
+          <span className="text-xs hidden sm:inline" style={{ color: "var(--color-text-faint)" }}>
+            {ageText}
+          </span>
+        )}
       </div>
       <button onClick={onRefresh} disabled={isRefreshing}
         className="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm transition-colors"
