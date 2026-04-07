@@ -430,7 +430,7 @@ function TopBar({
   onSearchChange: (v: string) => void;
 }) {
   const [ageText, setAgeText] = useState("");
-  const intervalRef = useRef<ReturnType<typeof setInterval>>();
+  const intervalRef = useRef<ReturnType<typeof setInterval>>(undefined);
 
   useEffect(() => {
     function tick() {

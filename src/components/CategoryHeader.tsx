@@ -1,10 +1,12 @@
 import { CATEGORY_META, type Category } from "@/lib/types";
-import { TrendingUp, Brain, Shield, Globe } from "lucide-react";
+import { TrendingUp, Brain, Shield, Globe, KeyRound, Workflow } from "lucide-react";
 
 const ICONS: Record<Category, typeof TrendingUp> = {
   finance: TrendingUp,
   "ai-automation": Brain,
   cybersecurity: Shield,
+  iam: KeyRound,
+  "intelligent-automation": Workflow,
   "news-geopolitics": Globe,
 };
 
